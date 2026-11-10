@@ -4,10 +4,12 @@ import argparse
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+import time 
 
 from itch.messages import StockDirectoryMessage
 from itch.parser import MessageParser
 
+start_time = time.perf_counter()
 @dataclass(frozen=True)
 class Order:
     side: bytes
@@ -136,6 +138,7 @@ def generate_quotes(input_path, output_path, symbol='AAPL', max_events=0):
 
 
 def main():
+    start_time = time.perf_counter()
     args_parser = argparse.ArgumentParser(description=__doc__)
     args_parser.add_argument('--input', type=Path, default=Path('input_file/S112825-v50.txt'))
     args_parser.add_argument('--output', type=Path, default=Path('quotes.csv'))
@@ -154,7 +157,9 @@ def main():
           f'wrote {rows:,} quote changes to {args.output}.')
     if args.max_events and matched >= args.max_events:
         print('Message cap reached. Omit --max-events or set it to 0 to process the entire file.')
-
+    end_time = time.perf_counter()
+    execution_time = end_time-start_time
+    print(f"Executed in {execution_time:.6f} seconds")
 
 if __name__ == '__main__':
     main()

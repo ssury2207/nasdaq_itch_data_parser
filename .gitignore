@@ -1,0 +1,18 @@
+# Raw ITCH input files (large binary)
+input_file/
+zip/
+*.gz
+
+# Generated output and local notes
+*.csv
+PROGRESS.md
+
+# Python environment
+.venv/
+__pycache__/
+
+# macOS
+.DS_Store
+
+# Compiled C++ program
+/orderbook/main
