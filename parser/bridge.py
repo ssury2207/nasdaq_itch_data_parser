@@ -58,7 +58,8 @@ def main():
     parser.add_argument('--cpp', default='orderbook/main', help='Compiled C++ program to feed (default: orderbook/main)')
     parser.add_argument('--print', action='store_true', help='Print decoded lines instead of running C++')
     args = parser.parse_args()
-    lines = decoded_lines(args.input, args.symbol.strip().upper())
+    symbol = args.symbol.strip().upper()
+    lines = decoded_lines(args.input, symbol)
 
     if args.print:
         try:
@@ -67,7 +68,7 @@ def main():
             sys.stdout = open(os.devnull, 'w')
         return
 
-    cpp = subprocess.Popen([args.cpp], stdin=subprocess.PIPE, text=True)
+    cpp = subprocess.Popen([args.cpp, symbol], stdin=subprocess.PIPE, text=True)
     sent = 0
     try:
         for line in lines:

@@ -16,3 +16,6 @@ __pycache__/
 
 # Compiled C++ program
 /orderbook/main
+
+# Local source folder
+/source/
