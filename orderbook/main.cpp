@@ -339,3 +339,7 @@ int main(int argc, char *argv[])
     std::cerr << "Processed " << count << " Orders\n";
     return 0;
 }
+
+//// best bid best ask -> A , C ,D, U
+//// best bid best ask -> <row> -> <E> -> 3
+////
