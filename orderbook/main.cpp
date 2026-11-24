@@ -20,6 +20,8 @@ struct OrderRecord
     std::int64_t new_order_id;
     std::int64_t timestamp;
     std::int64_t event_index;
+    std::int64_t match_number;
+    char printable;
 };
 struct OrderRecordPosition
 {
@@ -65,6 +67,19 @@ static Quote currentQuote()
     }
     return q;
 }
+struct Trade
+{
+    std::int64_t timestamp;
+    std::int64_t event_index;
+    std::int64_t price;
+    std::int64_t executedShare;
+    std::int64_t traderID;
+    char activity_type;
+    char side;
+    std::int64_t match_number;
+    char printable = '-';
+    char cross_type = '-';
+};
 
 static void printOrderRecord(const OrderRecord &order)
 {
@@ -107,6 +122,31 @@ static bool openQuoteFile(std::ofstream &out, const std::string &symbol)
     out << "timestamp_ns,source_event_index,symbol,bid_price,bid_size,ask_price,ask_size,event_type\n";
     std::cerr << "Writing quotes to " << path << '\n';
     return true;
+}
+
+// Opens output_binaries/trades/quotes_<SYMBOL>.csv and writes the header row
+static bool openTradesFile(std::ofstream &out, const std::string &symbol)
+{
+    const std::filesystem::path dir = "output_binaries/trades";
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path path = dir / ("trades_" + symbol + ".csv");
+    out.open(path);
+    if (!out.is_open())
+    {
+        std::cerr << "Could not open " << path << '\n';
+        return false;
+    }
+    out << "timestamp_ns,source_event_index,symbol,price,shares,side,order_id,match_number,event_type,printable,cross_type\n";
+    std::cerr << "Writing trades to " << path << '\n';
+    return true;
+}
+static void printTrade(std::ostream &out, const std::string &symbol, const Trade &t)
+{
+    out << t.timestamp << ',' << t.event_index << ',' << symbol << ',';
+    printPrice(out, t.price);
+    out << ',' << t.executedShare << ',' << t.side << ',' << t.traderID << ','
+        << t.match_number << ',' << t.activity_type << ',' << t.printable << ','
+        << t.cross_type << '\n';
 }
 
 static void ADD_ORDER(const OrderRecord &order)
@@ -210,7 +250,7 @@ static void DELETE_ORDER(const OrderRecord &order)
     }
 }
 
-static void CANCEL_ORDER(const OrderRecord &order)
+static void CANCEL_ORDER(const OrderRecord &order, std::ostream &tradeFile, const std::string &symbol)
 {
     std::int64_t cancelQuanity = order.quantity;
     if (orderIDLookUp.count(order.order_id))
@@ -219,6 +259,28 @@ static void CANCEL_ORDER(const OrderRecord &order)
         char side = orderIDLookUp[order.order_id].side;
         std::int64_t price = orderIDLookUp[order.order_id].price;
         auto &position = orderIDLookUp[order.order_id].position;
+        Trade t{};
+        t.timestamp = order.timestamp;
+        t.activity_type = order.activity_type;
+        t.side = side;
+        t.traderID = order.order_id;
+        t.executedShare = cancelQuanity;
+        t.event_index = order.event_index;
+        t.match_number = order.match_number;
+        t.printable = order.printable;
+
+        if (order.activity_type == 'E')
+        {
+            t.price = price;
+            printTrade(tradeFile, symbol, t);
+        }
+        else if (order.activity_type == 'C' && order.printable == 'Y')
+        {
+            t.price = order.price;
+            printTrade(tradeFile, symbol, t);
+        }
+
+        // reducing the shares from the book
         if (side == 'B')
         {
             if (buySide.count(price))
@@ -290,7 +352,12 @@ int main(int argc, char *argv[])
     }
     const std::string symbol = argv[1];
     std::ofstream quoteFile;
+    std::ofstream tradeFile;
+
     if (!openQuoteFile(quoteFile, symbol))
+        return 1;
+
+    if (!openTradesFile(tradeFile, symbol))
         return 1;
 
     std::string line;
@@ -300,7 +367,7 @@ int main(int argc, char *argv[])
     {
         std::istringstream ss(line);
         OrderRecord order{};
-        ss >> order.order_id >> order.activity_type >> order.side >> order.price >> order.quantity >> order.new_order_id >> order.timestamp >> order.event_index;
+        ss >> order.order_id >> order.activity_type >> order.side >> order.price >> order.quantity >> order.new_order_id >> order.timestamp >> order.event_index >> order.match_number >> order.printable;
         Quote before = currentQuote();
         switch (order.activity_type)
         {
@@ -317,13 +384,13 @@ int main(int argc, char *argv[])
             UPDATE_ORDER(order);
             break;
         case 'X':
-            CANCEL_ORDER(order);
+            CANCEL_ORDER(order, tradeFile, symbol);
             break;
         case 'E':
-            CANCEL_ORDER(order);
+            CANCEL_ORDER(order, tradeFile, symbol);
             break;
         case 'C':
-            CANCEL_ORDER(order);
+            CANCEL_ORDER(order, tradeFile, symbol);
             break;
         default:
             std::cerr << "INVALID MESSAGE ACTIVITY TYPE " << order.activity_type << "\n";
@@ -339,7 +406,3 @@ int main(int argc, char *argv[])
     std::cerr << "Processed " << count << " Orders\n";
     return 0;
 }
-
-//// best bid best ask -> A , C ,D, U
-//// best bid best ask -> <row> -> <E> -> 3
-////

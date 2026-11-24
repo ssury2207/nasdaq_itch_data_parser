@@ -1,15 +1,18 @@
 """Decode ITCH messages for one symbol and feed them to the C++ order book.
 
 Each order message becomes one text line on the C++ program's standard input:
-    order_id type side price shares new_order_id timestamp event_index
+    order_id type side price shares new_order_id timestamp event_index match_number printable
 - type: A, F, X, D, U, E or C
 - side: B or S for A/F; '-' when the message has no side
+- price: order price for A/F/U, execution price for C; 0 otherwise
 - price, shares, new_order_id: 0 when the message has no such field
 - timestamp: nanoseconds since midnight
 - event_index: position of the message in the input file (counts every message, from 1)
+- match_number: trade ID for E/C; 0 otherwise
+- printable: Y for E, Y or N for C; '-' otherwise
 
 Usage:
-    .venv/bin/python parser/bridge.py                      # decode and run orderbook/main
+    .venv/bin/python parser/bridge.py                      # compile orderbook/main.cpp, decode and run it
     .venv/bin/python parser/bridge.py --print | head       # only print the decoded lines
 """
 
@@ -38,17 +41,21 @@ def decoded_lines(input_path, symbol):
             if kind not in ORDER_TYPES:
                 continue
             side, price, shares, new_id = '-', 0, 0, 0
+            match_number, printable = 0, '-'
             if kind in (b'A', b'F'):
                 side, price, shares = message.buy_sell_indicator.decode(), message.price, message.shares
             elif kind == b'X':
                 shares = message.cancelled_shares
-            elif kind in (b'E', b'C'):
-                shares = message.executed_shares
+            elif kind == b'E':
+                shares, match_number, printable = message.executed_shares, message.match_number, 'Y'
+            elif kind == b'C':
+                shares, match_number = message.executed_shares, message.match_number
+                price, printable = message.execution_price, message.printable.decode()
             elif kind == b'U':
                 price, shares = message.price, message.shares
                 new_id = message.new_order_reference_number
             yield (f'{message.order_reference_number} {kind.decode()} {side} {price} {shares} {new_id} '
-                   f'{message.timestamp} {event_index}\n')
+                   f'{message.timestamp} {event_index} {match_number} {printable}\n')
 
 
 def main():
@@ -67,6 +74,13 @@ def main():
         except BrokenPipeError:  # e.g. piped into `head`
             sys.stdout = open(os.devnull, 'w')
         return
+
+    # Compile <cpp>.cpp into <cpp> before every run, so the latest C++ code is used
+    source = Path(args.cpp).with_suffix('.cpp')
+    print(f'Compiling {source} ...', file=sys.stderr)
+    build = subprocess.run(['clang++', '-std=c++17', '-o', args.cpp, str(source)])
+    if build.returncode != 0:
+        sys.exit(f'Compile failed for {source}; nothing was run.')
 
     cpp = subprocess.Popen([args.cpp, symbol], stdin=subprocess.PIPE, text=True)
     sent = 0
